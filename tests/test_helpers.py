@@ -57,8 +57,20 @@ class TestFmtDate:
         assert fmt_date("2026-06-22T14:30:00Z") == "22 Jun 14:30"
 
     def test_epoch_millis(self):
-        # 1782079200000 ms = 2026-06-22 (Konnect timeline format).
-        assert fmt_date(1782079200000).startswith("22 Jun")
+        # Konnect timeline dates are epoch milliseconds. Compare against the
+        # same instant built locally so the assertion is timezone-independent.
+        import time
+        from datetime import datetime
+
+        ms = 1782079200000
+        expected = datetime.fromtimestamp(ms / 1000).strftime("%d %b %H:%M")
+        assert fmt_date(ms) == expected
+        # Seconds are tolerated too.
+        assert fmt_date(int(time.time())) != ""
+
+    def test_epoch_seconds_vs_millis_same_instant(self):
+        # 13-digit ms and the equivalent 10-digit seconds render identically.
+        assert fmt_date(1782079200000) == fmt_date(1782079200)
 
     def test_empty(self):
         assert fmt_date("") == ""
