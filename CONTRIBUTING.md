@@ -12,10 +12,11 @@ uv run pre-commit install
 uv run pytest
 ```
 
-For an editable install of the `konnect` command:
+For an editable install of the `konnect` command (including browser login):
 
 ```bash
-uv tool install --editable '.[cli]'
+uv tool install --editable '.[cli,browser]'
+uv run playwright install chromium   # one-time: browser used for login
 ```
 
 ## Pre-commit hooks

@@ -1,11 +1,14 @@
 """Konnect CLI: toegang tot je ouderportaal vanuit de terminal.
 
 Usage:
-    konnect login                # Inloggen met e-mailadres + wachtwoord
-    konnect account              # Account- en locatie-info
-    konnect children             # Kinderen tonen
+    konnect login                # Inloggen via een browservenster
+    konnect logout               # Token verwijderen
+    konnect account              # Account- en opvanginfo
+    konnect children [--all]     # Kinderen tonen
     konnect timeline [--limit N] # Tijdlijn (foto's, berichten, dagritme)
-    konnect notifications        # Meldingen tonen
+    konnect messages [N]         # Berichten van de opvang (lijst, of N volledig)
+    konnect newsletters          # Nieuwsbrieven
+    konnect notifications        # Ongelezen aantallen
     konnect completion SHELL     # Shell completion script
 """
 

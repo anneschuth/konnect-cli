@@ -3,8 +3,8 @@
 </h1>
 
 <p align="center">
-  <em>A CLI and Python SDK for Konnect ouderportaal childcare portals.</em><br>
-  Kinderen, tijdlijn en meldingen bekijken vanuit de terminal, zonder de app te openen.
+  <em>A CLI and Python SDK for Konnect ouderportaal childcare portals, including Kind&co ludens.</em><br>
+  Kinderen, tijdlijn, berichten en nieuwsbrieven bekijken vanuit de terminal, zonder de app te openen.
 </p>
 
 <p align="center">
@@ -24,7 +24,20 @@ De `*.ouderportaal.nl` portalen zijn white-label tenants van het KidsKonnect / K
 - **Ongelezen aantallen** ophalen
 - **JSON output** voor scripting en automatisering
 
-Je kiest je portaal met het subdomein (bijvoorbeeld `kindencoludens` voor `kindencoludens.ouderportaal.nl`). De login zet een sessie op via een echt browservenster (Playwright). Daarna wordt het token (een JWT) lokaal bewaard en op de achtergrond ververst, zonder dat je opnieuw hoeft in te loggen.
+### Werkt dit voor mijn opvang?
+
+Ja, als je opvang inlogt via een adres van de vorm `https://<naam>.ouderportaal.nl`. Veel Nederlandse kinderopvangorganisaties op het Konnect-platform doen dat, waaronder **Kind&co ludens** (`kindencoludens.ouderportaal.nl`). Het deel vóór `.ouderportaal.nl` is je *portaal* (tenant).
+
+De standaard is `kindencoludens`. Voor een andere opvang geef je je eigen portaal op:
+
+```bash
+konnect login --portal jouwopvang          # eenmalig, of:
+export KONNECT_PORTAL=jouwopvang            # voor alle commando's
+```
+
+Het gekozen portaal wordt bij je token bewaard, dus latere commando's onthouden welke opvang je gebruikt.
+
+De login zet een sessie op via een echt browservenster (Playwright). Daarna wordt het token (een JWT) lokaal bewaard en op de achtergrond ververst, zonder dat je opnieuw hoeft in te loggen.
 
 > De portaal-API is niet publiek gedocumenteerd. De client is reverse-engineered op basis van een Konnect ouderportaal en kan breken als de aanbieder iets verandert.
 
@@ -149,21 +162,32 @@ konnect completion fish > ~/.config/fish/completions/konnect.fish
 
 ## SDK gebruik
 
-Het `konnect` package werkt ook als Python SDK, zonder CLI-afhankelijkheden:
+Het `konnect` package werkt ook als Python SDK. De data-client heeft alleen `httpx`
+nodig; alleen browser-login vereist de `browser` extra.
 
 ```python
-from konnect import KonnectAuth, KonnectClient, child_name
+from konnect import KonnectAuth, KonnectClient, child_name, html_to_text
 
-# Inloggen (eenmalig)
-KonnectAuth.login("je@email.nl", "geheim", portal="kindencoludens")
+# Optie A: inloggen via de browser (vereist de 'browser' extra), token wordt bewaard
+KonnectAuth.login(username="je@email.nl", password="geheim", portal="jouwopvang")
 
-# API gebruiken
+# Optie B: een eerder verkregen JWT direct gebruiken (geen browser nodig)
+#   with KonnectClient(token="<jwt>", portal="jouwopvang") as client:
+
+# API gebruiken (gebruikt het bewaarde token uit optie A)
 with KonnectClient() as client:
     for child in client.get_children():
         print(child_name(child))
 
+    # Tijdlijnkaarten houden hun tekst in een sub-object met de naam van het type.
     for card in client.get_timeline():
-        print(card.get("type"), card.get("text", ""))
+        ctype = card.get("type", "")
+        sub = card.get(ctype) or {}
+        text = sub.get("content") or sub.get("message") or ""
+        print(ctype, html_to_text(text)[:80])
+
+    for msg in client.get_messages("20250101", "20251231"):
+        print(msg.get("subject"), "-", html_to_text(msg.get("message", ""))[:80])
 ```
 
 ## Development
