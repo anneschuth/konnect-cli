@@ -263,7 +263,7 @@ class KonnectClient:
     def _items(self, path: str, **params: Any) -> list[dict[str, Any]]:
         data = self._get(path, **params)
         if isinstance(data, dict):
-            for key in ("items", "cards", "notifications", "children", "content"):
+            for key in ("items", "cards", "activeChildren", "notifications", "content"):
                 if isinstance(data.get(key), list):
                     return data[key]
             return []
@@ -272,8 +272,15 @@ class KonnectClient:
     def get_parent(self) -> dict[str, Any]:
         return self._get("/parent")
 
-    def get_children(self) -> list[dict[str, Any]]:
-        return self._items("/children/")
+    def get_children(self, include_inactive: bool = False) -> list[dict[str, Any]]:
+        """Return children. The API splits them into active and inactive lists."""
+        data = self._get("/children/")
+        if not isinstance(data, dict):
+            return data if isinstance(data, list) else []
+        children = list(data.get("activeChildren") or [])
+        if include_inactive:
+            children += list(data.get("inactiveChildren") or [])
+        return children
 
     def get_customer_info(self) -> dict[str, Any]:
         return self._get("/customer/info")
@@ -281,5 +288,7 @@ class KonnectClient:
     def get_timeline(self, page: int = 0) -> list[dict[str, Any]]:
         return self._items(f"/timeline/cards/v2/{page}")
 
-    def get_notifications(self) -> list[dict[str, Any]]:
-        return self._items("/notification/notifications")
+    def get_notifications(self) -> dict[str, Any]:
+        """Return unread counts ``{nrOfNewMessages, nrOfNewNewsItems, ...}``."""
+        data = self._get("/notification/notifications")
+        return data if isinstance(data, dict) else {}

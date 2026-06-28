@@ -21,10 +21,9 @@ import click
 import httpx
 from rich.console import Console
 from rich.panel import Panel
-from rich.table import Table
 
 from .client import KonnectAuth, KonnectClient, resolve_portal
-from .helpers import child_name, first_str, fmt_date
+from .helpers import child_name, first_str, fmt_date, html_to_text
 
 console = Console()
 
@@ -123,9 +122,9 @@ def account(ctx: click.Context) -> None:
             _dump({"parent": parent, "customer": customer})
             return
 
-        name = first_str(parent, "displayName", "fullName", "name", default="(onbekend)")
-        email = first_str(parent, "email", "emailAddress")
-        customer_name = first_str(customer, "name", "displayName")
+        name = first_str(parent, "fullname", "fullName", "firstName", default="(onbekend)")
+        email = first_str(parent, "emailAddress", "email")
+        customer_name = first_str(customer, "customerName", "name")
         console.print(
             Panel(
                 f"Naam: {name}\nE-mail: {email}\nOpvang: {customer_name}",
@@ -136,12 +135,13 @@ def account(ctx: click.Context) -> None:
 
 
 @cli.command()
+@click.option("--all", "show_all", is_flag=True, default=False, help="Ook inactieve kinderen")
 @click.pass_context
-def children(ctx: click.Context) -> None:
+def children(ctx: click.Context, show_all: bool) -> None:
     """Kinderen tonen."""
     as_json = ctx.obj["json"]
     with KonnectClient() as client:
-        items = client.get_children()
+        items = client.get_children(include_inactive=show_all)
 
         if as_json:
             _dump(items)
@@ -154,7 +154,10 @@ def children(ctx: click.Context) -> None:
         for child in items:
             name = child_name(child)
             cid = child.get("id", child.get("childId", ""))
-            console.print(f"  [bold]{name}[/] (ID: {cid})")
+            groups = child.get("activeGroups") or child.get("groups") or []
+            group = first_str(groups[0], "name") if groups else ""
+            suffix = f" [cyan]{group}[/cyan]" if group else ""
+            console.print(f"  [bold]{name}[/]{suffix} [dim](ID: {cid})[/]")
 
 
 @cli.command()
@@ -176,15 +179,29 @@ def timeline(ctx: click.Context, limit: int, page: int) -> None:
             return
 
         for card in items[:limit]:
-            ctype = first_str(card, "type", "cardType", default="kaart")
-            when = fmt_date(first_str(card, "date", "createdAt", "publishedAt", "timestamp"))
-            text = first_str(card, "text", "message", "description", "content", "title")
-            photos = card.get("photos", card.get("images", card.get("media", [])))
-            n_photos = len(photos) if isinstance(photos, list) else 0
+            ctype = first_str(card, "type", default="kaart")
+            when = fmt_date(card.get("date"))
+
+            # The text lives in a sub-object named after the card type
+            # (e.g. card["journal"]); photo cards carry a top-level "photos" list.
+            sub_raw = card.get(ctype)
+            sub: dict[str, Any] = sub_raw if isinstance(sub_raw, dict) else {}
+            raw = first_str(sub, "content", "journalContent", "dayRythmContent", "message", "text")
+            text = html_to_text(raw)
+            written_by = first_str(sub, "writtenByName")
+            photos_raw = card.get("photos")
+            n_photos = len(photos_raw) if isinstance(photos_raw, list) else 0
+
+            kids = card.get("children") or []
+            kid_names = ", ".join(child_name(k) for k in kids if isinstance(k, dict))
 
             meta_parts = [f"[cyan]{ctype}[/cyan]"]
+            if kid_names:
+                meta_parts.append(kid_names)
             if when:
                 meta_parts.append(when)
+            if written_by:
+                meta_parts.append(f"door {written_by}")
             if n_photos:
                 meta_parts.append(f"{n_photos} foto('s)")
             meta = " | ".join(meta_parts)
@@ -199,34 +216,28 @@ def timeline(ctx: click.Context, limit: int, page: int) -> None:
 @cli.command()
 @click.pass_context
 def notifications(ctx: click.Context) -> None:
-    """Meldingen tonen."""
+    """Ongelezen aantallen tonen."""
     as_json = ctx.obj["json"]
     with KonnectClient() as client:
-        items = client.get_notifications()
+        counts = client.get_notifications()
 
         if as_json:
-            _dump(items)
+            _dump(counts)
             return
 
-        if not items:
-            console.print("[dim]Geen meldingen gevonden[/]")
+        labels = {
+            "nrOfNewMessages": "Berichten",
+            "nrOfNewNewsItems": "Nieuws",
+            "nrOfNewNewsletters": "Nieuwsbrieven",
+        }
+        rows = [(label, counts.get(key) or 0) for key, label in labels.items()]
+        if not any(n for _, n in rows):
+            console.print("[dim]Niets ongelezen[/]")
             return
 
-        table = Table(title="Meldingen")
-        table.add_column("Datum", style="dim")
-        table.add_column("Type", style="cyan")
-        table.add_column("Bericht", style="bold")
-        table.add_column("Gelezen", style="green")
-
-        for n in items:
-            when = fmt_date(first_str(n, "date", "createdAt", "timestamp"))
-            ntype = first_str(n, "type", "notificationType")
-            text = first_str(n, "text", "message", "title", "description")
-            read = n.get("read", n.get("isRead"))
-            read_str = "ja" if read else "[red]nee[/red]"
-            table.add_row(when, ntype, text[:60], read_str)
-
-        console.print(table)
+        for label, n in rows:
+            mark = f"[bold red]{n}[/]" if n else "[dim]0[/]"
+            console.print(f"  {label}: {mark} ongelezen")
 
 
 @cli.command()

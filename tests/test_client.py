@@ -87,11 +87,30 @@ class TestExtractToken:
         assert _extract_token("") is None
 
 
+class TestChildrenAndNotifications:
+    def test_children_active_only(self):
+        c = KonnectClient(token="x")
+        data = {"activeChildren": [{"id": "1"}], "inactiveChildren": [{"id": "2"}]}
+        with patch.object(c, "_get", return_value=data):
+            assert c.get_children() == [{"id": "1"}]
+
+    def test_children_include_inactive(self):
+        c = KonnectClient(token="x")
+        data = {"activeChildren": [{"id": "1"}], "inactiveChildren": [{"id": "2"}]}
+        with patch.object(c, "_get", return_value=data):
+            assert c.get_children(include_inactive=True) == [{"id": "1"}, {"id": "2"}]
+
+    def test_notifications_returns_dict(self):
+        c = KonnectClient(token="x")
+        with patch.object(c, "_get", return_value={"nrOfNewMessages": 3}):
+            assert c.get_notifications() == {"nrOfNewMessages": 3}
+
+
 class TestItems:
     def test_items_from_list(self):
         c = KonnectClient(token="x")
         with patch.object(c, "_get", return_value=[{"a": 1}]):
-            assert c.get_children() == [{"a": 1}]
+            assert c.get_timeline() == [{"a": 1}]
 
     def test_items_from_items_key(self):
         c = KonnectClient(token="x")

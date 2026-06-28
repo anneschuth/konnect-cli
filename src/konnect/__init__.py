@@ -1,5 +1,5 @@
 from .client import KonnectAuth, KonnectClient, base_url, resolve_portal
-from .helpers import child_name, first_str, fmt_date
+from .helpers import child_name, first_str, fmt_date, html_to_text
 
 __all__ = [
     "KonnectClient",
@@ -9,4 +9,5 @@ __all__ = [
     "child_name",
     "first_str",
     "fmt_date",
+    "html_to_text",
 ]

@@ -29,7 +29,7 @@ def test_version():
 
 def test_children_table():
     stub = MagicMock()
-    stub.get_children.return_value = [{"displayName": "Sofie", "id": 7}]
+    stub.get_children.return_value = [{"fullname": "Sofie", "id": "7"}]
     with fake_client(stub):
         result = CliRunner().invoke(cli, ["children"])
     assert result.exit_code == 0
@@ -38,11 +38,19 @@ def test_children_table():
 
 def test_children_json():
     stub = MagicMock()
-    stub.get_children.return_value = [{"displayName": "Sofie", "id": 7}]
+    stub.get_children.return_value = [{"fullname": "Sofie", "id": "7"}]
     with fake_client(stub):
         result = CliRunner().invoke(cli, ["--json", "children"])
     assert result.exit_code == 0
-    assert json.loads(result.output)[0]["displayName"] == "Sofie"
+    assert json.loads(result.output)[0]["fullname"] == "Sofie"
+
+
+def test_children_all_flag_includes_inactive():
+    stub = MagicMock()
+    stub.get_children.return_value = []
+    with fake_client(stub):
+        CliRunner().invoke(cli, ["children", "--all"])
+    stub.get_children.assert_called_once_with(include_inactive=True)
 
 
 def test_children_empty():
@@ -56,8 +64,8 @@ def test_children_empty():
 
 def test_account():
     stub = MagicMock()
-    stub.get_parent.return_value = {"displayName": "Ouder", "email": "o@b.nl"}
-    stub.get_customer_info.return_value = {"name": "Kind en Co Ludens"}
+    stub.get_parent.return_value = {"fullname": "Ouder", "emailAddress": "o@b.nl"}
+    stub.get_customer_info.return_value = {"customerName": "Kind en Co Ludens"}
     with fake_client(stub):
         result = CliRunner().invoke(cli, ["account"])
     assert result.exit_code == 0
@@ -65,24 +73,44 @@ def test_account():
     assert "Kind en Co Ludens" in result.output
 
 
-def test_timeline_json():
+def test_timeline_renders_journal_text():
     stub = MagicMock()
-    stub.get_timeline.return_value = [{"type": "photo", "text": "Leuke dag", "photos": [1, 2]}]
-    with fake_client(stub):
-        result = CliRunner().invoke(cli, ["--json", "timeline", "--limit", "5"])
-    assert result.exit_code == 0
-    assert json.loads(result.output)[0]["text"] == "Leuke dag"
-
-
-def test_notifications():
-    stub = MagicMock()
-    stub.get_notifications.return_value = [
-        {"type": "info", "text": "Nieuw bericht", "read": False}
+    stub.get_timeline.return_value = [
+        {
+            "type": "journal",
+            "date": 1782079200000,
+            "children": [{"fullname": "Sofie"}],
+            "journal": {"content": "Leuke dag gehad", "writtenByName": "Juf"},
+        }
     ]
+    with fake_client(stub):
+        result = CliRunner().invoke(cli, ["timeline"])
+    assert result.exit_code == 0
+    assert "Leuke dag gehad" in result.output
+    assert "Sofie" in result.output
+
+
+def test_notifications_counts():
+    stub = MagicMock()
+    stub.get_notifications.return_value = {
+        "nrOfNewMessages": 2,
+        "nrOfNewNewsItems": 0,
+        "nrOfNewNewsletters": 1,
+    }
     with fake_client(stub):
         result = CliRunner().invoke(cli, ["notifications"])
     assert result.exit_code == 0
-    assert "Nieuw bericht" in result.output
+    assert "Berichten" in result.output
+    assert "2" in result.output
+
+
+def test_notifications_all_zero():
+    stub = MagicMock()
+    stub.get_notifications.return_value = {"nrOfNewMessages": 0, "nrOfNewNewsletters": 0}
+    with fake_client(stub):
+        result = CliRunner().invoke(cli, ["notifications"])
+    assert result.exit_code == 0
+    assert "Niets ongelezen" in result.output
 
 
 def test_logout_when_logged_out(tmp_path):
