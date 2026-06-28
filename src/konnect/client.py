@@ -6,18 +6,16 @@ Konnect childcare platform. Which tenant you talk to is set by the *portal*
 ``https://kindencoludens.ouderportaal.nl``. The portal can be overridden via the
 ``KONNECT_PORTAL`` environment variable or the ``--portal`` option.
 
-Authentication goes through ``/auth-api/token`` and yields a Bearer token; the
-data API lives under ``/restservices-parent``. Login is done headlessly via httpx
-(no browser needed). Tokens are stored locally and refreshed automatically.
-
-Note: the exact login handshake (JSON body vs HTTP Basic) was reverse-engineered
-from the live portal. ``KonnectAuth.login`` tries a JSON body first and falls back
-to HTTP Basic; adjust here if the portal changes.
+The parent login sets an HttpOnly session cookie on the ``/auth/`` page;
+``GET /auth-api/token`` then exchanges that cookie for a JWT, which is the Bearer
+token for ``/restservices-parent``. There is no replayable username/password API,
+so login is browser-backed via Playwright (see :mod:`konnect.browser_auth`); a
+persistent profile keeps the session alive so refreshes run headless. Tokens are
+stored locally and refreshed automatically.
 """
 
 from __future__ import annotations
 
-import getpass
 import json
 import os
 from pathlib import Path
@@ -87,122 +85,75 @@ def _extract_token(payload: Any) -> str | None:
     if isinstance(payload, str):
         return payload or None
     if isinstance(payload, dict):
-        for key in ("token", "accessToken", "access_token", "bearer", "jwt"):
+        for key in ("authToken", "token", "accessToken", "access_token", "bearer", "jwt"):
             val = payload.get(key)
             if isinstance(val, str) and val:
                 return val
     return None
 
 
+def _store_minted(body: dict[str, Any], portal: str) -> dict[str, Any]:
+    """Persist a minted token body and return the stored token dict."""
+    token = _extract_token(body)
+    if not token:
+        raise RuntimeError(
+            "Inloggen lukte, maar er kwam geen token terug. De auth-flow is mogelijk veranderd."
+        )
+    tokens: dict[str, Any] = {"token": token, "portal": portal}
+    for key in ("refreshToken", "expiration", "domainServerName"):
+        if body.get(key) is not None:
+            tokens[key] = body[key]
+    _save_tokens(tokens)
+    return tokens
+
+
 class KonnectAuth:
-    """Handle authentication for a Konnect ouderportaal tenant."""
+    """Handle authentication for a Konnect ouderportaal tenant.
+
+    Login is browser-backed (Playwright): the parent login sets a session
+    cookie, and ``GET /auth-api/token`` exchanges it for a JWT. A persistent
+    browser profile per portal keeps the session alive, so token refreshes run
+    headless without re-login. Requires the ``browser`` extra.
+    """
 
     @staticmethod
     def login(
         username: str | None = None,
         password: str | None = None,
         portal: str | None = None,
+        interactive: bool = True,
     ) -> dict[str, Any]:
-        """Log in and obtain a token via ``PUT /auth-api/token``.
+        """Log in via the browser and store the resulting JWT.
 
-        Tries a JSON body ``{username, password}`` first; if that is rejected,
-        retries with HTTP Basic auth. The resulting token (and any refresh
-        material), plus the active portal, is saved to :data:`TOKEN_PATH`.
+        When *username*/*password* are given they are typed into the login form;
+        otherwise (and on any extra step such as a captcha) the user completes
+        login in the opened window. The token, plus the active portal, is saved
+        to :data:`TOKEN_PATH`.
         """
         portal = resolve_portal(portal)
-        auth_api = f"{base_url(portal)}/auth-api"
-
-        if not username:
-            username = input("E-mailadres: ")
-        if not password:
-            password = getpass.getpass("Wachtwoord: ")
-
-        with httpx.Client(
-            timeout=30,
-            follow_redirects=True,
-            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-        ) as client:
-            # Establish auth-service context (sets cookies, mirrors the SPA boot).
-            try:
-                client.get(f"{auth_api}/customerdomainname")
-                client.get(f"{auth_api}/sso/settings")
-            except httpx.HTTPError:
-                pass
-
-            # Attempt 1: JSON body with English field names.
-            resp = client.put(
-                f"{auth_api}/token",
-                json={"username": username, "password": password},
+        body = _mint(portal, username=username, password=password, interactive=interactive)
+        if not body:
+            raise RuntimeError(
+                "Login mislukt: kon geen sessie opzetten in de browser. "
+                "Controleer je inloggegevens en probeer opnieuw."
             )
-
-            # Attempt 2: HTTP Basic auth.
-            if resp.status_code in (400, 401, 415):
-                resp = client.put(
-                    f"{auth_api}/token",
-                    auth=httpx.BasicAuth(username, password),
-                )
-
-            if resp.status_code in (400, 401, 403):
-                raise RuntimeError(
-                    f"Login mislukt: onjuist e-mailadres of wachtwoord (HTTP {resp.status_code})."
-                )
-            resp.raise_for_status()
-
-            try:
-                body = resp.json()
-            except json.JSONDecodeError:
-                body = {}
-            payload = _unwrap(body)
-            token = _extract_token(payload)
-
-            # Some deployments return the token only in a response header.
-            if not token:
-                header = resp.headers.get("authorization", "")
-                if header.lower().startswith("bearer "):
-                    token = header.split(" ", 1)[1]
-
-            if not token:
-                raise RuntimeError(
-                    "Login leek te slagen maar er kwam geen token terug. "
-                    "De auth-flow is mogelijk veranderd."
-                )
-
-            tokens: dict[str, Any] = {"token": token, "portal": portal}
-            if isinstance(payload, dict):
-                for key in ("refreshToken", "refresh_token", "expiresIn", "expires_in"):
-                    if key in payload:
-                        tokens[key] = payload[key]
-            _save_tokens(tokens)
-            return tokens
+        return _store_minted(body, portal)
 
     @staticmethod
     def refresh(portal: str | None = None) -> dict[str, Any] | None:
-        """Refresh the token via the cookie-backed ``PUT /auth-api/token``.
+        """Mint a fresh JWT from the persistent browser session (headless).
 
-        Returns the new token dict, or ``None`` when refresh is not possible.
+        Returns the new token dict, or ``None`` when the session has expired and
+        interactive re-login is needed.
         """
         portal = resolve_portal(portal)
-        with httpx.Client(
-            timeout=30,
-            follow_redirects=True,
-            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-        ) as client:
-            try:
-                resp = client.put(f"{base_url(portal)}/auth-api/token")
-            except httpx.HTTPError:
-                return None
-            if resp.status_code != 200:
-                return None
-            try:
-                payload = _unwrap(resp.json())
-            except json.JSONDecodeError:
-                return None
-            token = _extract_token(payload)
-            if not token:
-                return None
-            tokens = {"token": token, "portal": portal}
-            _save_tokens(tokens)
-            return tokens
+        try:
+            body = _mint(portal, interactive=False)
+        except RuntimeError:
+            return None
+        if not body:
+            return None
+        return _store_minted(body, portal)
 
     @staticmethod
     def get_token() -> tuple[str, str] | None:
@@ -224,6 +175,30 @@ class KonnectAuth:
         if refreshed:
             return refreshed["token"], portal
         return None
+
+
+def _mint(
+    portal: str,
+    username: str | None = None,
+    password: str | None = None,
+    interactive: bool = True,
+) -> dict[str, Any] | None:
+    """Mint a JWT via the browser, with a clear error if Playwright is missing."""
+    try:
+        from .browser_auth import mint_token
+    except ImportError as e:
+        raise RuntimeError(
+            "Browser-login vereist de 'browser' extra. "
+            "Installeer met: uv tool install --editable '.[cli,browser]' "
+            "en draai: uv run playwright install chromium"
+        ) from e
+    return mint_token(
+        portal,
+        base_url(portal),
+        username=username,
+        password=password,
+        interactive=interactive,
+    )
 
 
 def _token_works(token: str, portal: str) -> bool:

@@ -23,15 +23,16 @@ De `*.ouderportaal.nl` portalen zijn white-label tenants van het KidsKonnect / K
 - **Meldingen** ophalen
 - **JSON output** voor scripting en automatisering
 
-Je kiest je portaal met het subdomein (bijvoorbeeld `kindencoludens` voor `kindencoludens.ouderportaal.nl`). Authenticatie gaat headless via `httpx`, geen browser nodig. De CLI logt zelf in en bewaart het token lokaal.
+Je kiest je portaal met het subdomein (bijvoorbeeld `kindencoludens` voor `kindencoludens.ouderportaal.nl`). De login zet een sessie op via een echt browservenster (Playwright). Daarna wordt het token (een JWT) lokaal bewaard en op de achtergrond ververst, zonder dat je opnieuw hoeft in te loggen.
 
 > De portaal-API is niet publiek gedocumenteerd. De client is reverse-engineered op basis van een Konnect ouderportaal en kan breken als de aanbieder iets verandert.
 
 ## Installatie
 
 ```bash
-# CLI met uv (aanbevolen)
-uv tool install --editable '.[cli]'
+# CLI + browser-login met uv (aanbevolen)
+uv tool install --editable '.[cli,browser]'
+uv run playwright install chromium   # eenmalig: browser voor de login
 
 # Alleen SDK (alleen httpx)
 pip install .
@@ -39,13 +40,14 @@ pip install .
 # Vanuit source, voor ontwikkeling
 git clone https://github.com/anneschuth/konnect-cli.git
 cd konnect-cli
-uv tool install --editable '.[cli]'
+uv tool install --editable '.[cli,browser]'
+uv run playwright install chromium
 ```
 
 ## Snel aan de slag
 
 ```bash
-# Inloggen (vraagt om e-mailadres en wachtwoord)
+# Inloggen (opent een browservenster; log daar in)
 konnect login
 
 # Voor een ander portaal dan de standaard
@@ -102,10 +104,10 @@ Het gekozen portaal wordt bij je token opgeslagen, dus latere commando's praten 
 
 ### Credentials
 
-`konnect login` haalt je e-mailadres en wachtwoord uit, in volgorde:
+`konnect login` opent een browservenster op de loginpagina. Geef je gegevens mee om het formulier automatisch te laten invullen, of log handmatig in het venster in:
 
 ```bash
-# 1. Command-line opties
+# 1. Command-line opties (vult het formulier automatisch in)
 konnect login -u je@email.nl -p geheim
 
 # 2. Environment variabelen of .env bestand
@@ -115,15 +117,15 @@ export KONNECT_PASSWORD=geheim
 export KONNECT_PORTAL=jouwopvang
 konnect login
 
-# 3. Interactief (prompts) als niets is opgegeven
+# 3. Zonder gegevens: log zelf in het geopende venster in
 konnect login
 ```
 
 Zie [.env.example](.env.example) voor het formaat. Met `--store` worden je credentials in `~/.config/konnect/.env` bewaard (mode `0600`).
 
-### Tokens
+### Sessie en tokens
 
-Het token wordt opgeslagen in `~/.config/konnect/tokens.json` (mode `0600`) en automatisch ververst zodra het verloopt.
+De browsersessie blijft bewaard in een profiel per portaal onder `~/.config/konnect/browser-profiles/`. Het token (een JWT) staat in `~/.config/konnect/tokens.json` (mode `0600`) en wordt automatisch en headless ververst zolang de sessie geldig is. Pas als de sessie verloopt opent `konnect` weer een venster om opnieuw in te loggen.
 
 ## Shell completion
 

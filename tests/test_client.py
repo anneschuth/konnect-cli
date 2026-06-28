@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import httpx
 import pytest
 
 from konnect import client as client_mod
@@ -64,6 +63,13 @@ class TestUnwrap:
 class TestExtractToken:
     def test_string_payload(self):
         assert _extract_token("abc.def.ghi") == "abc.def.ghi"
+
+    def test_auth_token_key(self):
+        # The real Konnect success body uses `authToken`.
+        assert _extract_token({"authToken": "jwt.value.here"}) == "jwt.value.here"
+
+    def test_auth_token_takes_priority(self):
+        assert _extract_token({"authToken": "a", "token": "b"}) == "a"
 
     def test_token_key(self):
         assert _extract_token({"token": "t1"}) == "t1"
@@ -129,54 +135,56 @@ class TestClientEnter:
             assert entered.portal == "fromauth"
 
 
-class TestLogin:
-    def _resp(self, status, json_body=None, headers=None):
-        r = MagicMock(spec=httpx.Response)
-        r.status_code = status
-        r.headers = headers or {}
-        r.json.return_value = json_body if json_body is not None else {}
-        r.raise_for_status.return_value = None
-        return r
+# Real GET /auth-api/token success body shape.
+MINT_BODY = {
+    "authToken": "jwt.token.value",
+    "refreshToken": "refresh.value",
+    "expiration": "2026-06-28T13:00:00Z",
+    "domainServerName": "kindencoludens",
+}
 
-    def test_login_json_body_success(self, tmp_path):
+
+class TestLogin:
+    def test_login_success(self, tmp_path):
         token_path = tmp_path / "tokens.json"
-        mock_client = MagicMock()
-        mock_client.__enter__.return_value = mock_client
-        mock_client.put.return_value = self._resp(
-            200, {"result": True, "payload": {"token": "tok123"}}
-        )
         with (
-            patch.object(client_mod.httpx, "Client", return_value=mock_client),
+            patch.object(client_mod, "_mint", return_value=MINT_BODY) as mint,
             patch.object(client_mod, "TOKEN_PATH", token_path),
         ):
             tokens = KonnectAuth.login(username="a@b.nl", password="pw", portal="someorg")
-        assert tokens["token"] == "tok123"
+        assert tokens["token"] == "jwt.token.value"
         assert tokens["portal"] == "someorg"
+        assert tokens["refreshToken"] == "refresh.value"
         assert token_path.exists()
+        # Credentials and portal are forwarded to the browser layer.
+        _, kwargs = mint.call_args
+        assert kwargs["username"] == "a@b.nl"
+        assert kwargs["password"] == "pw"
 
-    def test_login_falls_back_to_basic(self, tmp_path):
-        token_path = tmp_path / "tokens.json"
-        mock_client = MagicMock()
-        mock_client.__enter__.return_value = mock_client
-        # First PUT (JSON) → 415, second (Basic) → 200
-        mock_client.put.side_effect = [
-            self._resp(415),
-            self._resp(200, {"token": "viabasic"}),
-        ]
+    def test_login_no_session_raises(self, tmp_path):
         with (
-            patch.object(client_mod.httpx, "Client", return_value=mock_client),
-            patch.object(client_mod, "TOKEN_PATH", token_path),
-        ):
-            tokens = KonnectAuth.login(username="a@b.nl", password="pw")
-        assert tokens["token"] == "viabasic"
-
-    def test_login_bad_credentials(self, tmp_path):
-        mock_client = MagicMock()
-        mock_client.__enter__.return_value = mock_client
-        mock_client.put.return_value = self._resp(401)
-        with (
-            patch.object(client_mod.httpx, "Client", return_value=mock_client),
+            patch.object(client_mod, "_mint", return_value=None),
             patch.object(client_mod, "TOKEN_PATH", tmp_path / "t.json"),
-            pytest.raises(RuntimeError, match="onjuist"),
+            pytest.raises(RuntimeError, match="kon geen sessie"),
         ):
             KonnectAuth.login(username="a@b.nl", password="wrong")
+
+    def test_refresh_headless_success(self, tmp_path):
+        token_path = tmp_path / "tokens.json"
+        with (
+            patch.object(client_mod, "_mint", return_value=MINT_BODY) as mint,
+            patch.object(client_mod, "TOKEN_PATH", token_path),
+        ):
+            tokens = KonnectAuth.refresh(portal="someorg")
+        assert tokens is not None
+        assert tokens["token"] == "jwt.token.value"
+        # Refresh must not open a window.
+        _, kwargs = mint.call_args
+        assert kwargs["interactive"] is False
+
+    def test_refresh_expired_returns_none(self, tmp_path):
+        with (
+            patch.object(client_mod, "_mint", return_value=None),
+            patch.object(client_mod, "TOKEN_PATH", tmp_path / "t.json"),
+        ):
+            assert KonnectAuth.refresh(portal="someorg") is None

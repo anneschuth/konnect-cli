@@ -26,7 +26,10 @@ cli = [
     "python-dotenv>=1.0",
     "click>=8.1",
 ]
-dev = ["konnect[cli]", "pytest>=8.0", "pre-commit>=4.0", "ruff>=0.9.0", "ty>=0.0.1a0"]
+browser = [
+    "playwright>=1.40",
+]
+dev = ["konnect[cli,browser]", "pytest>=8.0", "pre-commit>=4.0", "ruff>=0.9.0", "ty>=0.0.1a0"]
 
 [project.scripts]
 konnect = "konnect.cli:main"

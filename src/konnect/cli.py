@@ -55,7 +55,12 @@ def cli(ctx: click.Context, as_json: bool) -> None:
     "--store", is_flag=True, default=False, help="Credentials opslaan in ~/.config/konnect/.env"
 )
 def login(username: str | None, password: str | None, portal: str | None, store: bool) -> None:
-    """Inloggen bij je ouderportaal."""
+    """Inloggen bij je ouderportaal.
+
+    Opent een browservenster. Met -u/-p (of env) worden je gegevens automatisch
+    ingevuld; anders log je zelf in het venster in. De sessie blijft daarna
+    bewaard, dus volgende keren verloopt het token stilletjes op de achtergrond.
+    """
     import os
 
     from dotenv import load_dotenv
@@ -72,6 +77,7 @@ def login(username: str | None, password: str | None, portal: str | None, store:
     active_portal = resolve_portal(portal)
 
     try:
+        console.print("[dim]Browser wordt geopend voor login…[/]")
         KonnectAuth.login(
             username=username or None,
             password=password or None,
