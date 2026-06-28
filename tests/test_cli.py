@@ -115,6 +115,83 @@ def test_notifications_all_zero():
     assert "Niets ongelezen" in result.output
 
 
+MESSAGES = [
+    {
+        "subject": "Reminder afscheid",
+        "lastWritten": "Juf",
+        "date": 1782392507927,
+        "message": "<p>Beste ouders, volgende maand...</p>",
+        "unread": True,
+    },
+    {
+        "subject": "Uitje",
+        "lastWritten": "Sneeuwwit",
+        "date": 1782000000000,
+        "message": "<div>We gaan naar het bos</div>",
+        "unread": False,
+    },
+]
+
+
+def test_messages_list():
+    stub = MagicMock()
+    stub.get_messages.return_value = list(MESSAGES)
+    with fake_client(stub):
+        result = CliRunner().invoke(cli, ["messages"])
+    assert result.exit_code == 0
+    assert "Reminder afscheid" in result.output
+    assert "Uitje" in result.output
+
+
+def test_messages_unread_filter():
+    stub = MagicMock()
+    stub.get_messages.return_value = list(MESSAGES)
+    with fake_client(stub):
+        result = CliRunner().invoke(cli, ["messages", "--unread"])
+    assert result.exit_code == 0
+    assert "Reminder afscheid" in result.output
+    assert "Uitje" not in result.output
+
+
+def test_messages_detail_strips_html():
+    stub = MagicMock()
+    stub.get_messages.return_value = list(MESSAGES)
+    with fake_client(stub):
+        result = CliRunner().invoke(cli, ["messages", "1"])
+    assert result.exit_code == 0
+    assert "Beste ouders" in result.output
+    assert "<p>" not in result.output
+
+
+def test_messages_detail_out_of_range():
+    stub = MagicMock()
+    stub.get_messages.return_value = list(MESSAGES)
+    with fake_client(stub):
+        result = CliRunner().invoke(cli, ["messages", "99"])
+    assert result.exit_code == 1
+    assert "bestaat niet" in result.output
+
+
+def test_messages_empty():
+    stub = MagicMock()
+    stub.get_messages.return_value = []
+    with fake_client(stub):
+        result = CliRunner().invoke(cli, ["messages"])
+    assert result.exit_code == 0
+    assert "Geen berichten" in result.output
+
+
+def test_newsletters_list():
+    stub = MagicMock()
+    stub.get_newsletters.return_value = [
+        {"mailSubject": "Juni-update", "sendDate": 1782000000000, "unread": True}
+    ]
+    with fake_client(stub):
+        result = CliRunner().invoke(cli, ["newsletters"])
+    assert result.exit_code == 0
+    assert "Juni-update" in result.output
+
+
 def test_logout_when_logged_out(tmp_path):
     missing = tmp_path / "tokens.json"
     with patch("konnect.client.TOKEN_PATH", missing):

@@ -292,3 +292,19 @@ class KonnectClient:
         """Return unread counts ``{nrOfNewMessages, nrOfNewNewsItems, ...}``."""
         data = self._get("/notification/notifications")
         return data if isinstance(data, dict) else {}
+
+    def get_messages(self, date_from: str, date_to: str) -> list[dict[str, Any]]:
+        """Return logbook messages (the mailbox) in the ``YYYYMMDD`` window.
+
+        Each item carries the full ``message`` (HTML), ``subject``, ``date``
+        (epoch ms), ``lastWritten`` (author), ``unread`` and ``lastFromParent``.
+        """
+        data = self._get("/logbook/overview", **{"from": date_from, "to": date_to})
+        return data if isinstance(data, list) else []
+
+    def get_newsletters(self, index: int = 0) -> list[dict[str, Any]]:
+        """Return newsletters: ``{mailSubject, contentSnippet, sendDate, unread}``."""
+        data = self._get("/newsletter", index=index)
+        if isinstance(data, dict) and isinstance(data.get("newsletterItems"), list):
+            return data["newsletterItems"]
+        return []

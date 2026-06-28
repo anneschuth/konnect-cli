@@ -32,6 +32,14 @@ def _dump(data: Any) -> None:
     print(json.dumps(data, indent=2, default=str, ensure_ascii=False))
 
 
+def _default_window() -> tuple[str, str]:
+    """Return a ``(from, to)`` ``YYYYMMDD`` window covering roughly the last year."""
+    from datetime import date, timedelta
+
+    today = date.today()
+    return (today - timedelta(days=400)).strftime("%Y%m%d"), today.strftime("%Y%m%d")
+
+
 @click.group()
 @click.option("--json", "as_json", is_flag=True, default=False, help="Output als JSON")
 @click.version_option(version=__version__, prog_name="konnect")
@@ -238,6 +246,93 @@ def notifications(ctx: click.Context) -> None:
         for label, n in rows:
             mark = f"[bold red]{n}[/]" if n else "[dim]0[/]"
             console.print(f"  {label}: {mark} ongelezen")
+
+
+@cli.command()
+@click.argument("number", type=int, required=False)
+@click.option("--from", "date_from", default=None, help="Begindatum YYYYMMDD")
+@click.option("--to", "date_to", default=None, help="Einddatum YYYYMMDD")
+@click.option("--unread", is_flag=True, default=False, help="Alleen ongelezen")
+@click.pass_context
+def messages(
+    ctx: click.Context,
+    number: int | None,
+    date_from: str | None,
+    date_to: str | None,
+    unread: bool,
+) -> None:
+    """Berichten van de opvang tonen.
+
+    Zonder argument: lijst alle berichten. Met een nummer: toon dat bericht
+    volledig (gebruik het nummer uit de lijst).
+    """
+    as_json = ctx.obj["json"]
+    win_from, win_to = _default_window()
+    with KonnectClient() as client:
+        items = client.get_messages(date_from or win_from, date_to or win_to)
+
+    items.sort(key=lambda m: m.get("date") or 0, reverse=True)
+    if unread:
+        items = [m for m in items if m.get("unread")]
+
+    if as_json:
+        _dump(items if number is None else (items[number - 1] if 0 < number <= len(items) else {}))
+        return
+
+    if not items:
+        console.print("[dim]Geen berichten gevonden[/]")
+        return
+
+    # Detail view: show one full message.
+    if number is not None:
+        if not (0 < number <= len(items)):
+            console.print(f"[red]Nummer {number} bestaat niet. Beschikbaar: 1-{len(items)}[/]")
+            sys.exit(1)
+        msg = items[number - 1]
+        subject = first_str(msg, "subject", default="(geen onderwerp)")
+        author = first_str(msg, "lastWritten")
+        when = fmt_date(msg.get("date"))
+        body = html_to_text(first_str(msg, "message"))
+        header = f"{subject}\n[dim]{author} | {when}[/]\n\n{body}"
+        console.print(Panel(header, title="[bold]Bericht[/]", border_style="blue"))
+        return
+
+    # List view.
+    for i, msg in enumerate(items, start=1):
+        subject = first_str(msg, "subject", default="(geen onderwerp)")
+        author = first_str(msg, "lastWritten")
+        when = fmt_date(msg.get("date"))
+        snippet = html_to_text(first_str(msg, "message")).replace("\n", " ")[:80]
+        mark = "[bold red]●[/]" if msg.get("unread") else "[dim]●[/]"
+        console.print(f"{mark} [dim]{i:>2}[/] [bold]{subject}[/] [dim]· {author} · {when}[/]")
+        if snippet:
+            console.print(f"     [dim]{snippet}[/]")
+
+
+@cli.command()
+@click.pass_context
+def newsletters(ctx: click.Context) -> None:
+    """Nieuwsbrieven tonen."""
+    as_json = ctx.obj["json"]
+    with KonnectClient() as client:
+        items = client.get_newsletters()
+
+    if as_json:
+        _dump(items)
+        return
+
+    if not items:
+        console.print("[dim]Geen nieuwsbrieven gevonden[/]")
+        return
+
+    for n in items:
+        subject = first_str(n, "mailSubject", default="(geen onderwerp)")
+        when = fmt_date(n.get("sendDate"))
+        snippet = html_to_text(first_str(n, "contentSnippet")).replace("\n", " ")[:80]
+        mark = "[bold red]●[/]" if n.get("unread") else "[dim]●[/]"
+        console.print(f"{mark} [bold]{subject}[/] [dim]· {when}[/]")
+        if snippet:
+            console.print(f"   [dim]{snippet}[/]")
 
 
 @cli.command()

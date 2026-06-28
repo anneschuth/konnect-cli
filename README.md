@@ -20,7 +20,8 @@ De `*.ouderportaal.nl` portalen zijn white-label tenants van het KidsKonnect / K
 
 - **Kinderen** en accountinfo tonen
 - **Tijdlijn** bekijken: foto's, berichten en dagritme-observaties van de opvang
-- **Meldingen** ophalen
+- **Berichten** van de opvang lezen, plus nieuwsbrieven
+- **Ongelezen aantallen** ophalen
 - **JSON output** voor scripting en automatisering
 
 Je kiest je portaal met het subdomein (bijvoorbeeld `kindencoludens` voor `kindencoludens.ouderportaal.nl`). De login zet een sessie op via een echt browservenster (Playwright). Daarna wordt het token (een JWT) lokaal bewaard en op de achtergrond ververst, zonder dat je opnieuw hoeft in te loggen.
@@ -65,7 +66,11 @@ konnect account
 # Tijdlijn (laatste 20 kaarten)
 konnect timeline --limit 20
 
-# Meldingen
+# Berichten van de opvang (lijst, dan nummer 3 volledig lezen)
+konnect messages
+konnect messages 3
+
+# Ongelezen aantallen
 konnect notifications
 ```
 
@@ -76,9 +81,11 @@ konnect notifications
 | `konnect login [-u] [-p] [--portal] [--store]` | Inloggen, token opslaan |
 | `konnect logout` | Token verwijderen |
 | `konnect account` | Account- en opvanginfo |
-| `konnect children` | Kinderen tonen |
+| `konnect children [--all]` | Kinderen tonen |
 | `konnect timeline [--limit N] [--page N]` | Tijdlijn: foto's, berichten, dagritme |
-| `konnect notifications` | Meldingen tonen |
+| `konnect messages [N] [--unread] [--from] [--to]` | Berichten van de opvang (lijst, of N volledig) |
+| `konnect newsletters` | Nieuwsbrieven |
+| `konnect notifications` | Ongelezen aantallen |
 | `konnect completion SHELL` | Shell completion (bash/zsh/fish) |
 
 ### JSON output

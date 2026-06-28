@@ -105,6 +105,23 @@ class TestChildrenAndNotifications:
         with patch.object(c, "_get", return_value={"nrOfNewMessages": 3}):
             assert c.get_notifications() == {"nrOfNewMessages": 3}
 
+    def test_messages_returns_list(self):
+        c = KonnectClient(token="x")
+        with patch.object(c, "_get", return_value=[{"subject": "Hoi"}]) as g:
+            assert c.get_messages("20260101", "20260201") == [{"subject": "Hoi"}]
+        g.assert_called_once_with("/logbook/overview", **{"from": "20260101", "to": "20260201"})
+
+    def test_messages_non_list_is_empty(self):
+        c = KonnectClient(token="x")
+        with patch.object(c, "_get", return_value={"oops": 1}):
+            assert c.get_messages("20260101", "20260201") == []
+
+    def test_newsletters_unwraps_items(self):
+        c = KonnectClient(token="x")
+        data = {"moreItems": False, "newsletterItems": [{"mailSubject": "Juni"}]}
+        with patch.object(c, "_get", return_value=data):
+            assert c.get_newsletters() == [{"mailSubject": "Juni"}]
+
 
 class TestItems:
     def test_items_from_list(self):
