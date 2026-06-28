@@ -22,9 +22,11 @@ def fake_client(stub):
 
 
 def test_version():
+    from konnect.cli import __version__
+
     result = CliRunner().invoke(cli, ["--version"])
     assert result.exit_code == 0
-    assert "0.1.0" in result.output
+    assert __version__ in result.output
 
 
 def test_children_table():
