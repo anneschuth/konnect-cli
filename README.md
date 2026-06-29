@@ -37,7 +37,7 @@ export KONNECT_PORTAL=jouwopvang            # voor alle commando's
 
 Het gekozen portaal wordt bij je token bewaard, dus latere commando's onthouden welke opvang je gebruikt.
 
-De login zet een sessie op via een echt browservenster (Playwright). Daarna wordt het token (een JWT) lokaal bewaard en op de achtergrond ververst, zonder dat je opnieuw hoeft in te loggen.
+De login zet een sessie op via een echte browser (Playwright). Met je gegevens gebeurt dat headless op de achtergrond; alleen zonder gegevens (of bij bijv. een captcha) opent er een venster om in te loggen. Daarna wordt het token (een JWT) lokaal bewaard en op de achtergrond ververst, zonder dat je opnieuw hoeft in te loggen.
 
 > De portaal-API is niet publiek gedocumenteerd. De client is reverse-engineered op basis van een Konnect ouderportaal en kan breken als de aanbieder iets verandert.
 
@@ -61,7 +61,7 @@ uv run playwright install chromium
 ## Snel aan de slag
 
 ```bash
-# Inloggen (opent een browservenster; log daar in)
+# Inloggen (met -u/-p of env: headless; anders opent een venster)
 konnect login
 
 # Voor een ander portaal dan de standaard
@@ -124,7 +124,7 @@ Het gekozen portaal wordt bij je token opgeslagen, dus latere commando's praten 
 
 ### Credentials
 
-`konnect login` opent een browservenster op de loginpagina. Geef je gegevens mee om het formulier automatisch te laten invullen, of log handmatig in het venster in:
+`konnect login` logt headless in zodra je gegevens meegeeft; het formulier wordt op de achtergrond ingevuld en verzonden. Zonder gegevens opent er een browservenster op de loginpagina waarin je zelf inlogt:
 
 ```bash
 # 1. Command-line opties (vult het formulier automatisch in)
@@ -145,7 +145,7 @@ Zie [.env.example](.env.example) voor het formaat. Met `--store` worden je crede
 
 ### Sessie en tokens
 
-De browsersessie blijft bewaard in een profiel per portaal onder `~/.config/konnect/browser-profiles/`. Het token (een JWT) staat in `~/.config/konnect/tokens.json` (mode `0600`) en wordt automatisch en headless ververst zolang de sessie geldig is. Pas als de sessie verloopt opent `konnect` weer een venster om opnieuw in te loggen.
+De browsersessie blijft bewaard in een profiel per portaal onder `~/.config/konnect/browser-profiles/`. Het token (een JWT) staat in `~/.config/konnect/tokens.json` (mode `0600`) en wordt automatisch en headless ververst zolang de sessie geldig is. Verloopt de sessie en heb je credentials (opgeslagen of via env), dan logt `konnect login` headless opnieuw in; alleen zonder credentials opent er weer een venster.
 
 ## Shell completion
 

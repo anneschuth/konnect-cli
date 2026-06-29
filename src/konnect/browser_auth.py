@@ -74,15 +74,19 @@ def mint_token(
     """Drive a browser to obtain a JWT for ``portal``.
 
     Returns the ``GET /auth-api/token`` body (``{authToken, expiration,
-    refreshToken, domainServerName}``) or ``None`` on failure. When a valid
-    session already exists in the profile this runs headless; otherwise it opens
-    a window for login (filling credentials when given).
+    refreshToken, domainServerName}``) or ``None`` on failure.
+
+    Runs headless by default. A stored session refreshes headless, and a fresh
+    login with credentials is filled and submitted headless too. A visible window
+    only opens when a human is actually needed: an interactive login without
+    credentials, or when the headless credential login does not land on the app
+    (e.g. a captcha or changed form). Pass ``interactive=False`` to never open a
+    window — the call then fails instead of prompting.
     """
     from playwright.sync_api import sync_playwright
 
     profile = _profile_dir(portal)
     profile.mkdir(parents=True, exist_ok=True)
-    has_session = (profile / "Default" / "Cookies").exists()
     login_url = f"{base}/auth/login"
     app_url = f"{base}/parent/"
 
@@ -91,6 +95,9 @@ def mint_token(
         with contextlib.suppress(Exception):
             page.wait_for_load_state("networkidle", timeout=15000)
         page.wait_for_timeout(1000)
+
+    def _needs_login(page) -> bool:
+        return "/auth/" in page.url and "/parent" not in page.url
 
     with sync_playwright() as p:
 
@@ -102,36 +109,52 @@ def mint_token(
                 viewport={"width": 1280, "height": 800},
             )
 
-        context = launch(headless=has_session)
+        def run(page) -> bool:
+            """Navigate to the app, returning whether we reached it (logged in)."""
+            page.goto(login_url, timeout=30000, wait_until="domcontentloaded")
+            _settle(page)
+            if not _needs_login(page):
+                if "/parent" not in page.url:
+                    page.goto(app_url, timeout=30000, wait_until="domcontentloaded")
+                    _settle(page)
+                return True
+            # In headless we can only proceed by filling credentials.
+            if not (username and password):
+                return False
+            _fill_login(page, username, password)
+            try:
+                page.wait_for_url("**/parent/**", timeout=60000)
+            except Exception:  # noqa: BLE001
+                return False
+            _settle(page)
+            return True
+
+        # Always try headless first: refresh an existing session, or log in with
+        # credentials without ever showing a window.
+        context = launch(headless=True)
         page = context.pages[0] if context.pages else context.new_page()
-        page.goto(login_url, timeout=30000, wait_until="domcontentloaded")
-        _settle(page)
+        logged_in = run(page)
 
-        needs_login = "/auth/" in page.url and "/parent" not in page.url
-
-        if needs_login and has_session:
-            # Stored session expired: relaunch headed for interactive login.
+        # Fall back to a visible window only when a human is required.
+        if not logged_in:
             context.close()
+            if not interactive:
+                return None
             context = launch(headless=False)
             page = context.pages[0] if context.pages else context.new_page()
             page.goto(login_url, timeout=30000, wait_until="domcontentloaded")
             _settle(page)
-            needs_login = "/auth/" in page.url and "/parent" not in page.url
-
-        if needs_login:
-            if not interactive and not (username and password):
-                context.close()
-                return None
-            _fill_login(page, username, password)
-            try:
-                page.wait_for_url("**/parent/**", timeout=300000)
-            except Exception:  # noqa: BLE001
-                context.close()
-                return None
-            _settle(page)
-        elif "/parent" not in page.url:
-            page.goto(app_url, timeout=30000, wait_until="domcontentloaded")
-            _settle(page)
+            if _needs_login(page):
+                _fill_login(page, username, password)
+                try:
+                    page.wait_for_url("**/parent/**", timeout=300000)
+                except Exception:  # noqa: BLE001
+                    context.close()
+                    return None
+                _settle(page)
+            elif "/parent" not in page.url:
+                page.goto(app_url, timeout=30000, wait_until="domcontentloaded")
+                _settle(page)
 
         result = page.evaluate(_MINT_JS)
         context.close()

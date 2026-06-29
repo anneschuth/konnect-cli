@@ -67,9 +67,10 @@ def cli(ctx: click.Context, as_json: bool) -> None:
 def login(username: str | None, password: str | None, portal: str | None, store: bool) -> None:
     """Inloggen bij je ouderportaal.
 
-    Opent een browservenster. Met -u/-p (of env) worden je gegevens automatisch
-    ingevuld; anders log je zelf in het venster in. De sessie blijft daarna
-    bewaard, dus volgende keren verloopt het token stilletjes op de achtergrond.
+    Met -u/-p (of env) gebeurt het inloggen headless op de achtergrond. Alleen
+    als er geen gegevens zijn (of bij bijv. een captcha) opent er een venster
+    waarin je zelf inlogt. De sessie blijft daarna bewaard, dus volgende keren
+    verloopt het token stilletjes op de achtergrond.
     """
     import os
 
@@ -87,7 +88,10 @@ def login(username: str | None, password: str | None, portal: str | None, store:
     active_portal = resolve_portal(portal)
 
     try:
-        console.print("[dim]Browser wordt geopend voor login…[/]")
+        if username and password:
+            console.print("[dim]Inloggen op de achtergrond…[/]")
+        else:
+            console.print("[dim]Browser wordt geopend voor login…[/]")
         KonnectAuth.login(
             username=username or None,
             password=password or None,

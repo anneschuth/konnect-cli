@@ -125,10 +125,10 @@ class KonnectAuth:
     ) -> dict[str, Any]:
         """Log in via the browser and store the resulting JWT.
 
-        When *username*/*password* are given they are typed into the login form;
-        otherwise (and on any extra step such as a captcha) the user completes
-        login in the opened window. The token, plus the active portal, is saved
-        to :data:`TOKEN_PATH`.
+        When *username*/*password* are given they are filled and submitted
+        headless, with no visible window. A window opens only when a human is
+        needed: no credentials, or an extra step such as a captcha. The token,
+        plus the active portal, is saved to :data:`TOKEN_PATH`.
         """
         portal = resolve_portal(portal)
         body = _mint(portal, username=username, password=password, interactive=interactive)
